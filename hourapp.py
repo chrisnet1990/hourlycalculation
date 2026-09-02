@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 
 # --- 1. Page Config ---
 st.set_page_config(page_title="Stock Winners", layout="wide")
-st.title("🏆 Top 5 Traded Stocks (15-Min Intervals)")
+st.title("🏆 Top 5 Traded Stocks per 15-Min Interval")
 
 # --- 2. Database Setup (In-Memory) ---
 engine = create_engine('sqlite://')
@@ -100,7 +100,6 @@ if raw_df is not None:
     BracketCalc AS (
         SELECT 
             symbol, open, close, minute_val, l_time,
-            -- Calculate 15-minute brackets from 09:15 AM (555 minutes from midnight)
             ((strftime('%H', l_time) * 60 + strftime('%M', l_time)) - 555) / 15 AS bracket_id
         FROM BaseData
         WHERE bracket_id >= 0 AND bracket_id < 25
@@ -134,26 +133,43 @@ if raw_df is not None:
     )
     SELECT 
         time_slot AS "Time Interval", 
-        rnk AS "Rank",
-        symbol AS "Company", 
-        ROUND(total_val / 10000000.0, 2) AS "Traded Value (Cr)",
+        rnk,
+        symbol, 
+        ROUND(total_val / 10000000.0, 2) AS val_cr,
         CASE 
-            WHEN b_close > b_open THEN '🟢 UP'
-            WHEN b_close < b_open THEN '🔴 DOWN'
-            ELSE '⚪ FLAT'
-        END AS "Trend"
+            WHEN b_close > b_open THEN '🟢'
+            WHEN b_close < b_open THEN '🔴'
+            ELSE '⚪'
+        END AS trend
     FROM Ranked 
     WHERE rnk <= 5
     ORDER BY "Time Interval" ASC, rnk ASC;
     """
     
-    winners_df = pd.read_sql(query, engine)
+    raw_winners_df = pd.read_sql(query, engine)
 
-    # --- 5. Display Table ---
-    if not winners_df.empty:
-        # Format Traded Value to display explicitly with two decimals and "Cr"
-        winners_df["Traded Value (Cr)"] = winners_df["Traded Value (Cr)"].map("₹ {:,.2f} Cr".format)
-        st.dataframe(winners_df, use_container_width=True, hide_index=True)
+    # --- 5. Format & Pivot to Wide Layout ---
+    if not raw_winners_df.empty:
+        # Create a single display string for each stock entry: "SYMBOL (₹ X.XX Cr) Trend"
+        raw_winners_df['stock_info'] = (
+            raw_winners_df['symbol'] + 
+            " (₹ " + raw_winners_df['val_cr'].apply(lambda x: f"{x:,.2f}") + " Cr) " + 
+            raw_winners_df['trend']
+        )
+        
+        # Pivot table so ranks become columns (#1 to #5)
+        pivoted_df = raw_winners_df.pivot(index='Time Interval', columns='rnk', values='stock_info').reset_index()
+        
+        # Rename rank columns to readable header titles
+        pivoted_df = pivoted_df.rename(columns={
+            1: "Top 1",
+            2: "Top 2",
+            3: "Top 3",
+            4: "Top 4",
+            5: "Top 5"
+        })
+
+        st.dataframe(pivoted_df, use_container_width=True, hide_index=True)
     else:
         st.info("Market is currently closed or data is not yet available for the 09:15 bracket.")
 
