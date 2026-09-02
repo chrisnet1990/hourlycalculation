@@ -5,14 +5,13 @@ from sqlalchemy import create_engine
 
 # --- 1. Page Config ---
 st.set_page_config(page_title="Stock Winners", layout="wide")
-st.title("🏆 25-Min Bracket Winners")
+st.title("🏆 Top 5 Traded Stocks (15-Min Intervals)")
 
 # --- 2. Database Setup (In-Memory) ---
 engine = create_engine('sqlite://')
 
 stock_urls = {
-    
-"ADANIENT": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE423A01024&interval=I1&from=1788373799999&limit=500",
+    "ADANIENT": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE423A01024&interval=I1&from=1788373799999&limit=500",
     "ADANIPORT": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE742F01042&interval=I1&from=1788373799999&limit=500",
     "APOLLOHOSP": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE437A01024&interval=I1&from=1788373799999&limit=500",
     "ASIANPAINT": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE021A01026&interval=I1&from=1788373799999&limit=500",
@@ -43,7 +42,7 @@ stock_urls = {
     "JSWSTEEL": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE019A01038&interval=I1&from=1788373799999&limit=500",
     "KOTAKBANK": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE237A01028&interval=I1&from=1788373799999&limit=500",
     "LT": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE018A01030&interval=I1&from=1788373799999&limit=500",
-    "MARUTI": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE585B01010&interval=I1&from=1788373799999&limit=500",
+    "MARUTI": "https://service.upstox.com/chart/open/v3/candles?interval=I1&from=1788373799999&limit=500",
     "MAXHEALTH": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE027H01010&interval=I1&from=1788373799999&limit=500",
     "MM": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE101A01026&interval=I1&from=1788373799999&limit=500",
     "NESTLEIND": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE239A01024&interval=I1&from=1788373799999&limit=500",
@@ -65,8 +64,9 @@ stock_urls = {
     "ULTRACEMCO": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE481G01011&interval=I1&from=1788373799999&limit=500",
     "WIPRO": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE075A01022&interval=I1&from=1788373799999&limit=500"
 }
+
 # --- 3. Data Fetching ---
-@st.cache_data(ttl=60) 
+@st.cache_data(ttl=60)
 def fetch_data():
     all_data = []
     for symbol, url in stock_urls.items():
@@ -86,7 +86,7 @@ raw_df = fetch_data()
 if raw_df is not None:
     raw_df.to_sql('stock_minutes', engine, if_exists='replace', index=False)
 
-# --- 4. SQL Analysis (Includes Trend logic) ---
+    # --- 4. SQL Analysis ---
     query = """
     WITH BaseData AS (
         SELECT 
@@ -100,52 +100,59 @@ if raw_df is not None:
     BracketCalc AS (
         SELECT 
             symbol, open, close, minute_val, l_time,
-            ((strftime('%H', l_time) * 60 + strftime('%M', l_time)) - 555) / 25 AS bracket_id
+            -- Calculate 15-minute brackets from 09:15 AM (555 minutes from midnight)
+            ((strftime('%H', l_time) * 60 + strftime('%M', l_time)) - 555) / 15 AS bracket_id
         FROM BaseData
-        WHERE bracket_id >= 0 AND bracket_id < 16
+        WHERE bracket_id >= 0 AND bracket_id < 25
     ),
     PricePoints AS (
         SELECT 
             bracket_id, 
             symbol, 
             minute_val,
-            -- Get the very first open price in the bracket
             FIRST_VALUE(open) OVER (PARTITION BY bracket_id, symbol ORDER BY l_time) as b_open,
-            -- Get the very last close price in the bracket
             LAST_VALUE(close) OVER (PARTITION BY bracket_id, symbol ORDER BY l_time ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as b_close
         FROM BracketCalc
     ),
     Aggregated AS (
         SELECT 
             bracket_id, symbol, SUM(minute_val) as total_val, b_open, b_close,
-            time(555 * 60 + (bracket_id * 25 * 60), 'unixepoch') || ' to ' || 
-            time(555 * 60 + ((bracket_id + 1) * 25 * 60), 'unixepoch') as time_slot
+            time(555 * 60 + (bracket_id * 15 * 60), 'unixepoch') || ' to ' || 
+            time(555 * 60 + ((bracket_id + 1) * 15 * 60), 'unixepoch') as time_slot
         FROM PricePoints
         GROUP BY bracket_id, symbol
     ),
     Ranked AS (
         SELECT 
-            time_slot, symbol, total_val, b_open, b_close,
+            time_slot, 
+            symbol, 
+            total_val, 
+            b_open, 
+            b_close,
             RANK() OVER (PARTITION BY time_slot ORDER BY total_val DESC) as rnk
         FROM Aggregated
     )
     SELECT 
         time_slot AS "Time Interval", 
-        symbol AS "Top Company", 
-        total_val AS "Traded Value",
+        rnk AS "Rank",
+        symbol AS "Company", 
+        ROUND(total_val / 10000000.0, 2) AS "Traded Value (Cr)",
         CASE 
             WHEN b_close > b_open THEN '🟢 UP'
             WHEN b_close < b_open THEN '🔴 DOWN'
             ELSE '⚪ FLAT'
         END AS "Trend"
-    FROM Ranked WHERE rnk = 1
-    ORDER BY "Time Interval" ASC;
+    FROM Ranked 
+    WHERE rnk <= 5
+    ORDER BY "Time Interval" ASC, rnk ASC;
     """
     
     winners_df = pd.read_sql(query, engine)
 
     # --- 5. Display Table ---
     if not winners_df.empty:
+        # Format Traded Value to display explicitly with two decimals and "Cr"
+        winners_df["Traded Value (Cr)"] = winners_df["Traded Value (Cr)"].map("₹ {:,.2f} Cr".format)
         st.dataframe(winners_df, use_container_width=True, hide_index=True)
     else:
         st.info("Market is currently closed or data is not yet available for the 09:15 bracket.")
