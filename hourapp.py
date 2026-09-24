@@ -9,11 +9,14 @@ st.set_page_config(page_title="Stock Winners", layout="wide")
 st.title("🏆 Top 5 Traded Stocks per 15-Min Interval")
 
 # --- 2. Date Selection Widget ---
-# Default date can be set or derived; using a standard picker here
+today = datetime.date.today()
 selected_date = st.date_input(
     "Select Trading Date", 
-    value=datetime.date(2026, 6, 3) # You can adjust the default date as needed
+    value=today 
 )
+
+# Check if selected date is today
+is_today = (selected_date == today)
 
 # Convert the selected date to epoch time in milliseconds (start of the day)
 dt = datetime.datetime.combine(selected_date, datetime.datetime.min.time())
@@ -22,7 +25,6 @@ epoch_from = int(dt.timestamp() * 1000)
 # --- 3. Database Setup & Dynamic URL Mapping ---
 engine = create_engine('sqlite://')
 
-# Mapping of stock symbols to their respective Upstox instrument keys
 instruments = {
     "ADANIENT": "NSE_EQ%7CINE423A01024",
     "ADANIPORT": "NSE_EQ%7CINE742F01042",
@@ -78,19 +80,21 @@ instruments = {
     "WIPRO": "NSE_EQ%7CINE075A01022"
 }
 
-# Dynamically construct the stock URLs using the selected epoch timestamp
 stock_urls = {}
 for symbol, key in instruments.items():
     if key:
-        stock_urls[symbol] = f"https://service.upstox.com/chart/open/v3/candles?instrumentKey={key}&interval=I1&from={epoch_from}&limit=500"
+        if is_today:
+            # Switch to intraday URL format for current day data streaming
+            stock_urls[symbol] = f"https://service.upstox.com/chart/open/v3/candles/intraday/{key}/1"
+        else:
+            stock_urls[symbol] = f"https://service.upstox.com/chart/open/v3/candles?instrumentKey={key}&interval=I1&from={epoch_from}&limit=500"
     else:
         stock_urls[symbol] = f"https://service.upstox.com/chart/open/v3/candles?interval=I1&from={epoch_from}&limit=500"
 
 # --- 4. Data Fetching ---
 @st.cache_data(ttl=60)
-def fetch_data(epoch_val):
+def fetch_data(epoch_val, current_day_flag):
     all_data = []
-    # Re-build URLs inside or reference global stock_urls dependent on epoch_from
     for symbol, url in stock_urls.items():
         try:
             response = requests.get(url)
@@ -103,7 +107,7 @@ def fetch_data(epoch_val):
             st.error(f"Error fetching {symbol}: {e}")
     return pd.concat(all_data) if all_data else None
 
-raw_df = fetch_data(epoch_from)
+raw_df = fetch_data(epoch_from, is_today)
 
 if raw_df is not None and not raw_df.empty:
     raw_df.to_sql('stock_minutes', engine, if_exists='replace', index=False)
