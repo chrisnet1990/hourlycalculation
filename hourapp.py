@@ -2,73 +2,95 @@ import streamlit as st
 import pandas as pd
 import requests
 from sqlalchemy import create_engine
+import datetime
 
 # --- 1. Page Config ---
 st.set_page_config(page_title="Stock Winners", layout="wide")
 st.title("🏆 Top 5 Traded Stocks per 15-Min Interval")
 
-# --- 2. Database Setup (In-Memory) ---
+# --- 2. Date Selection Widget ---
+# Default date can be set or derived; using a standard picker here
+selected_date = st.date_input(
+    "Select Trading Date", 
+    value=datetime.date(2026, 6, 3) # You can adjust the default date as needed
+)
+
+# Convert the selected date to epoch time in milliseconds (start of the day)
+dt = datetime.datetime.combine(selected_date, datetime.datetime.min.time())
+epoch_from = int(dt.timestamp() * 1000)
+
+# --- 3. Database Setup & Dynamic URL Mapping ---
 engine = create_engine('sqlite://')
 
-stock_urls = {
-    "ADANIENT": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE423A01024&interval=I1&from=1788373799999&limit=500",
-    "ADANIPORT": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE742F01042&interval=I1&from=1788373799999&limit=500",
-    "APOLLOHOSP": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE437A01024&interval=I1&from=1788373799999&limit=500",
-    "ASIANPAINT": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE021A01026&interval=I1&from=1788373799999&limit=500",
-    "AXISBANK": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE238A01034&interval=I1&from=1788373799999&limit=500",
-    "BAJAJAUTO": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE917I01010&interval=I1&from=1788373799999&limit=500",
-    "BAJAJFINSV": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE918I01026&interval=I1&from=1788373799999&limit=500",
-    "BAJFINANCE": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE296A01032&interval=I1&from=1788373799999&limit=500",
-    "BEL": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE263A01024&interval=I1&from=1788373799999&limit=500",
-    "BHARTIARTL": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE397D01024&interval=I1&from=1788373799999&limit=500",
-    "CIPLA": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE059A01026&interval=I1&from=1788373799999&limit=500",
-    "COALINDIA": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE522F01014&interval=I1&from=1788373799999&limit=500",
-    "DRREDDY": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE089A01031&interval=I1&from=1788373799999&limit=500",
-    "EICHER": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE066A01021&interval=I1&from=1788373799999&limit=500",
-    "ETERNAL": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE758T01015&interval=I1&from=1788373799999&limit=500",
-    "GRASIM": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE047A01021&interval=I1&from=1788373799999&limit=500",
-    "HCLTECH": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE860A01027&interval=I1&from=1788373799999&limit=500",
-    "HDFCBANK": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE040A01034&interval=I1&from=1788373799999&limit=500",
-    "HDFCLIFE": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE795G01014&interval=I1&from=1788373799999&limit=500",
-    "HEROMOTOCO": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE158A01026&interval=I1&from=1788373799999&limit=500",
-    "HINDALCO": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE038A01020&interval=I1&from=1788373799999&limit=500",
-    "HINDUNILVR": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE030A01027&interval=I1&from=1788373799999&limit=500",
-    "ICICIBANK": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE090A01021&interval=I1&from=1788373799999&limit=500",
-    "INDIGO": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE646L01027&interval=I1&from=1788373799999&limit=500",
-    "INDUSINDBK": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE095A01012&interval=I1&from=1788373799999&limit=500",
-    "INFY": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE009A01021&interval=I1&from=1788373799999&limit=500",
-    "ITC": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE154A01025&interval=I1&from=1788373799999&limit=500",
-    "JIOFIN": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE758E01017&interval=I1&from=1788373799999&limit=500",
-    "JSWSTEEL": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE019A01038&interval=I1&from=1788373799999&limit=500",
-    "KOTAKBANK": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE237A01028&interval=I1&from=1788373799999&limit=500",
-    "LT": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE018A01030&interval=I1&from=1788373799999&limit=500",
-    "MARUTI": "https://service.upstox.com/chart/open/v3/candles?interval=I1&from=1788373799999&limit=500",
-    "MAXHEALTH": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE027H01010&interval=I1&from=1788373799999&limit=500",
-    "MM": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE101A01026&interval=I1&from=1788373799999&limit=500",
-    "NESTLEIND": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE239A01024&interval=I1&from=1788373799999&limit=500",
-    "NTPC": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE733E01010&interval=I1&from=1788373799999&limit=500",
-    "ONGC": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE213A01029&interval=I1&from=1788373799999&limit=500",
-    "POWERGRID": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE752E01010&interval=I1&from=1788373799999&limit=500",
-    "RELIANCE": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE002A01018&interval=I1&from=1788373799999&limit=500",
-    "SBILIFE": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE123W01016&interval=I1&from=1788373799999&limit=500",
-    "SBIN": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE062A01020&interval=I1&from=1788373799999&limit=500",
-    "SHRIRAMFIN": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE721A01047&interval=I1&from=1788373799999&limit=500",
-    "SUNPHARMA": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE044A01036&interval=I1&from=1788373799999&limit=500",
-    "TATACONSUM": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE192A01025&interval=I1&from=1788373799999&limit=500",
-    "TATAMOTORS": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE155A01022&interval=I1&from=1788373799999&limit=500",
-    "TATASTEEL": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE081A01020&interval=I1&from=1788373799999&limit=500",
-    "TCS": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE467B01029&interval=I1&from=1788373799999&limit=500",
-    "TECHM": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE669C01036&interval=I1&from=1788373799999&limit=500",
-    "TITAN": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE280A01028&interval=I1&from=1788373799999&limit=500",
-    "TRENT": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE849A01020&interval=I1&from=1788373799999&limit=500",
-    "ULTRACEMCO": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE481G01011&interval=I1&from=1788373799999&limit=500",
-    "WIPRO": "https://service.upstox.com/chart/open/v3/candles?instrumentKey=NSE_EQ%7CINE075A01022&interval=I1&from=1788373799999&limit=500"
+# Mapping of stock symbols to their respective Upstox instrument keys
+instruments = {
+    "ADANIENT": "NSE_EQ%7CINE423A01024",
+    "ADANIPORT": "NSE_EQ%7CINE742F01042",
+    "APOLLOHOSP": "NSE_EQ%7CINE437A01024",
+    "ASIANPAINT": "NSE_EQ%7CINE021A01026",
+    "AXISBANK": "NSE_EQ%7CINE238A01034",
+    "BAJAJAUTO": "NSE_EQ%7CINE917I01010",
+    "BAJAJFINSV": "NSE_EQ%7CINE918I01026",
+    "BAJFINANCE": "NSE_EQ%7CINE296A01032",
+    "BEL": "NSE_EQ%7CINE263A01024",
+    "BHARTIARTL": "NSE_EQ%7CINE397D01024",
+    "CIPLA": "NSE_EQ%7CINE059A01026",
+    "COALINDIA": "NSE_EQ%7CINE522F01014",
+    "DRREDDY": "NSE_EQ%7CINE089A01031",
+    "EICHER": "NSE_EQ%7CINE066A01021",
+    "ETERNAL": "NSE_EQ%7CINE758T01015",
+    "GRASIM": "NSE_EQ%7CINE047A01021",
+    "HCLTECH": "NSE_EQ%7CINE860A01027",
+    "HDFCBANK": "NSE_EQ%7CINE040A01034",
+    "HDFCLIFE": "NSE_EQ%7CINE795G01014",
+    "HEROMOTOCO": "NSE_EQ%7CINE158A01026",
+    "HINDALCO": "NSE_EQ%7CINE038A01020",
+    "HINDUNILVR": "NSE_EQ%7CINE030A01027",
+    "ICICIBANK": "NSE_EQ%7CINE090A01021",
+    "INDIGO": "NSE_EQ%7CINE646L01027",
+    "INDUSINDBK": "NSE_EQ%7CINE095A01012",
+    "INFY": "NSE_EQ%7CINE009A01021",
+    "ITC": "NSE_EQ%7CINE154A01025",
+    "JIOFIN": "NSE_EQ%7CINE758E01017",
+    "JSWSTEEL": "NSE_EQ%7CINE019A01038",
+    "KOTAKBANK": "NSE_EQ%7CINE237A01028",
+    "LT": "NSE_EQ%7CINE018A01030",
+    "MARUTI": "NSE_EQ%7CINE585B01010",
+    "MAXHEALTH": "NSE_EQ%7CINE027H01010",
+    "MM": "NSE_EQ%7CINE101A01026",
+    "NESTLEIND": "NSE_EQ%7CINE239A01024",
+    "NTPC": "NSE_EQ%7CINE733E01010",
+    "ONGC": "NSE_EQ%7CINE213A01029",
+    "POWERGRID": "NSE_EQ%7CINE752E01010",
+    "RELIANCE": "NSE_EQ%7CINE002A01018",
+    "SBILIFE": "NSE_EQ%7CINE123W01016",
+    "SBIN": "NSE_EQ%7CINE062A01020",
+    "SHRIRAMFIN": "NSE_EQ%7CINE721A01047",
+    "SUNPHARMA": "NSE_EQ%7CINE044A01036",
+    "TATACONSUM": "NSE_EQ%7CINE192A01025",
+    "TATAMOTORS": "NSE_EQ%7CINE155A01022",
+    "TATASTEEL": "NSE_EQ%7CINE081A01020",
+    "TCS": "NSE_EQ%7CINE467B01029",
+    "TECHM": "NSE_EQ%7CINE669C01036",
+    "TITAN": "NSE_EQ%7CINE280A01028",
+    "TRENT": "NSE_EQ%7CINE849A01020",
+    "ULTRACEMCO": "NSE_EQ%7CINE481G01011",
+    "WIPRO": "NSE_EQ%7CINE075A01022"
 }
 
-# --- 3. Data Fetching ---
+# Dynamically construct the stock URLs using the selected epoch timestamp
+stock_urls = {}
+for symbol, key in instruments.items():
+    if key:
+        stock_urls[symbol] = f"https://service.upstox.com/chart/open/v3/candles?instrumentKey={key}&interval=I1&from={epoch_from}&limit=500"
+    else:
+        stock_urls[symbol] = f"https://service.upstox.com/chart/open/v3/candles?interval=I1&from={epoch_from}&limit=500"
+
+# --- 4. Data Fetching ---
 @st.cache_data(ttl=60)
-def fetch_data():
+def fetch_data(epoch_val):
     all_data = []
+    # Re-build URLs inside or reference global stock_urls dependent on epoch_from
     for symbol, url in stock_urls.items():
         try:
             response = requests.get(url)
@@ -81,12 +103,12 @@ def fetch_data():
             st.error(f"Error fetching {symbol}: {e}")
     return pd.concat(all_data) if all_data else None
 
-raw_df = fetch_data()
+raw_df = fetch_data(epoch_from)
 
-if raw_df is not None:
+if raw_df is not None and not raw_df.empty:
     raw_df.to_sql('stock_minutes', engine, if_exists='replace', index=False)
 
-    # --- 4. SQL Analysis ---
+    # --- 5. SQL Analysis ---
     query = """
     WITH BaseData AS (
         SELECT 
@@ -148,19 +170,16 @@ if raw_df is not None:
     
     raw_winners_df = pd.read_sql(query, engine)
 
-    # --- 5. Format & Pivot to Wide Layout ---
+    # --- 6. Format & Pivot to Wide Layout ---
     if not raw_winners_df.empty:
-        # Create a single display string for each stock entry: "SYMBOL (₹ X.XX Cr) Trend"
         raw_winners_df['stock_info'] = (
             raw_winners_df['symbol'] + 
             " (₹ " + raw_winners_df['val_cr'].apply(lambda x: f"{x:,.2f}") + " Cr) " + 
             raw_winners_df['trend']
         )
         
-        # Pivot table so ranks become columns (#1 to #5)
         pivoted_df = raw_winners_df.pivot(index='Time Interval', columns='rnk', values='stock_info').reset_index()
         
-        # Rename rank columns to readable header titles
         pivoted_df = pivoted_df.rename(columns={
             1: "Top 1",
             2: "Top 2",
@@ -171,7 +190,7 @@ if raw_df is not None:
 
         st.dataframe(pivoted_df, use_container_width=True, hide_index=True)
     else:
-        st.info("Market is currently closed or data is not yet available for the 09:15 bracket.")
+        st.info("Market is closed or data is not yet available for the selected date.")
 
 else:
-    st.warning("Connecting to Upstox API...")
+    st.warning("Connecting to Upstox API or no data found for the selected date...")
