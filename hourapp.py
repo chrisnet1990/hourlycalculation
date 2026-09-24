@@ -8,17 +8,17 @@ import datetime
 st.set_page_config(page_title="Stock Winners", layout="wide")
 st.title("🏆 Top 5 Traded Stocks per 15-Min Interval")
 
-# --- 2. Date Selection Widget ---
+# --- 2. Date Selection & Dynamic Epoch Generator ---
 today = datetime.date.today()
 selected_date = st.date_input(
     "Select Trading Date", 
     value=today 
 )
 
-# Check if selected date is today
+# Check if selected date is today's live date
 is_today = (selected_date == today)
 
-# Convert the selected date to epoch time in milliseconds (start of the day)
+# Dynamically convert any selected date into the day's starting epoch time in milliseconds
 dt = datetime.datetime.combine(selected_date, datetime.datetime.min.time())
 epoch_from = int(dt.timestamp() * 1000)
 
@@ -84,7 +84,6 @@ stock_urls = {}
 for symbol, key in instruments.items():
     if key:
         if is_today:
-            # Switch to intraday URL format for current day data streaming
             stock_urls[symbol] = f"https://service.upstox.com/chart/open/v3/candles/intraday/{key}/1"
         else:
             stock_urls[symbol] = f"https://service.upstox.com/chart/open/v3/candles?instrumentKey={key}&interval=I1&from={epoch_from}&limit=500"
