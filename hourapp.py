@@ -8,19 +8,23 @@ import datetime
 st.set_page_config(page_title="Stock Winners", layout="wide")
 st.title("🏆 Top 5 Traded Stocks per 15-Min Interval")
 
-# --- 2. Date Selection & Dynamic Epoch Generator ---
+# --- 2. Date Selection & January 2026 Epoch Reference ---
 today = datetime.date.today()
+min_date = datetime.date(2026, 1, 1)
+
 selected_date = st.date_input(
-    "Select Trading Date", 
-    value=today 
+    "Select Trading Date (from Jan 2026 onwards)", 
+    value=today,
+    min_value=min_date,
+    max_value=today
 )
 
-# Check if selected date is today's live date
-is_today = (selected_date == today)
+# Base epoch for January 2026 and calculation using 86400000 ms per day
+jan_base_epoch = 1767292199999
+days_difference = (selected_date - min_date).days
+epoch_from = jan_base_epoch + (days_difference * 86400000)
 
-# Dynamically convert any selected date into the day's starting epoch time in milliseconds
-dt = datetime.datetime.combine(selected_date, datetime.datetime.min.time())
-epoch_from = int(dt.timestamp() * 1000)
+is_today = (selected_date == today)
 
 # --- 3. Database Setup & Dynamic URL Mapping ---
 engine = create_engine('sqlite://')
@@ -57,7 +61,7 @@ instruments = {
     "JSWSTEEL": "NSE_EQ%7CINE019A01038",
     "KOTAKBANK": "NSE_EQ%7CINE237A01028",
     "LT": "NSE_EQ%7CINE018A01030",
-    "MARUTI": "NSE_EQ%7CINE585B01010",
+    "MARUTI": None,
     "MAXHEALTH": "NSE_EQ%7CINE027H01010",
     "MM": "NSE_EQ%7CINE101A01026",
     "NESTLEIND": "NSE_EQ%7CINE239A01024",
@@ -103,7 +107,7 @@ def fetch_data(epoch_val, current_day_flag):
                 df['symbol'] = symbol
                 all_data.append(df)
         except Exception as e:
-            st.error(f"Error fetching {symbol}: {e}")
+            pass # Suppress individual network warnings to handle cleanly below
     return pd.concat(all_data) if all_data else None
 
 raw_df = fetch_data(epoch_from, is_today)
@@ -193,7 +197,7 @@ if raw_df is not None and not raw_df.empty:
 
         st.dataframe(pivoted_df, use_container_width=True, hide_index=True)
     else:
-        st.info("Market is closed or data is not yet available for the selected date.")
+        st.warning("Data not available")
 
 else:
-    st.warning("Connecting to Upstox API or no data found for the selected date...")
+    st.warning("Data not available")
