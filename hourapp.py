@@ -24,6 +24,9 @@ jan_base_epoch = 1767292199999
 days_difference = (selected_date - min_date).days
 epoch_from = jan_base_epoch + (days_difference * 86400000)
 
+# Display the epoch timestamp on the web page
+st.caption(f"📅 Selected Date: **{selected_date}** | ⏱️ Computed Epoch Timestamp: `{epoch_from}`")
+
 is_today = (selected_date == today)
 
 # --- 3. Database Setup & Dynamic URL Mapping ---
@@ -107,7 +110,7 @@ def fetch_data(epoch_val, current_day_flag):
                 df['symbol'] = symbol
                 all_data.append(df)
         except Exception as e:
-            pass # Suppress individual network warnings to handle cleanly below
+            pass
     return pd.concat(all_data) if all_data else None
 
 raw_df = fetch_data(epoch_from, is_today)
