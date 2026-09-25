@@ -27,9 +27,7 @@ epoch_from = jan_base_epoch + (days_difference * 86400000)
 # Display the epoch timestamp on the web page
 st.caption(f"📅 Selected Date: **{selected_date}** | ⏱️ Computed Epoch Timestamp: `{epoch_from}`")
 
-is_today = (selected_date == today)
-
-# --- 3. Database Setup & Dynamic URL Mapping ---
+# --- 3. Database Setup & Uniform Epoch URL Mapping ---
 engine = create_engine('sqlite://')
 
 instruments = {
@@ -64,7 +62,7 @@ instruments = {
     "JSWSTEEL": "NSE_EQ%7CINE019A01038",
     "KOTAKBANK": "NSE_EQ%7CINE237A01028",
     "LT": "NSE_EQ%7CINE018A01030",
-    "MARUTI": "NSE_EQ%7CINE585B01010",
+    "MARUTI": None,
     "MAXHEALTH": "NSE_EQ%7CINE027H01010",
     "MM": "NSE_EQ%7CINE101A01026",
     "NESTLEIND": "NSE_EQ%7CINE239A01024",
@@ -90,16 +88,14 @@ instruments = {
 stock_urls = {}
 for symbol, key in instruments.items():
     if key:
-        if is_today:
-            stock_urls[symbol] = f"https://service.upstox.com/chart/open/v3/candles/intraday/{key}/1"
-        else:
-            stock_urls[symbol] = f"https://service.upstox.com/chart/open/v3/candles?instrumentKey={key}&interval=I1&from={epoch_from}&limit=500"
+        # Using the reliable epoch endpoint uniformly for all days
+        stock_urls[symbol] = f"https://service.upstox.com/chart/open/v3/candles?instrumentKey={key}&interval=I1&from={epoch_from}&limit=500"
     else:
         stock_urls[symbol] = f"https://service.upstox.com/chart/open/v3/candles?interval=I1&from={epoch_from}&limit=500"
 
 # --- 4. Data Fetching ---
 @st.cache_data(ttl=60)
-def fetch_data(epoch_val, current_day_flag):
+def fetch_data(epoch_val):
     all_data = []
     for symbol, url in stock_urls.items():
         try:
@@ -113,7 +109,7 @@ def fetch_data(epoch_val, current_day_flag):
             pass
     return pd.concat(all_data) if all_data else None
 
-raw_df = fetch_data(epoch_from, is_today)
+raw_df = fetch_data(epoch_from)
 
 if raw_df is not None and not raw_df.empty:
     raw_df.to_sql('stock_minutes', engine, if_exists='replace', index=False)
